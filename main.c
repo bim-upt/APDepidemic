@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <stdbool.h>
 #include <stdlib.h>
 
 #define DEBUG
@@ -15,14 +14,18 @@ typedef enum{
     S,
     E,
     W
-}movementDirection_e;
+}cardinalDirections_e;
+
+typedef struct{
+    int x;  //column
+    int y;  //row
+}coords_t;
 
 typedef struct{
     int id;
-    int x;
-    int y;
+    coords_t coords;
     status_e status;
-    movementDirection_e dir;
+    cardinalDirections_e dir;
     int movmentAmplitute;
 }person_t;
 
@@ -41,9 +44,9 @@ person_t *getPopulation(FILE *f, int size){
 
     for(int i = 0; i < size; i++){
         //id x y status dir amplitute
-        fscanf(f, "%d %d %d %d %d %d", &persons[i].id, &persons[i].x, &persons[i].y, (int*)&persons[i].status, (int*)&persons[i].dir, &persons[i].movmentAmplitute);
+        fscanf(f, "%d %d %d %d %d %d", &persons[i].id, &persons[i].coords.x, &persons[i].coords.y, (int*)&persons[i].status, (int*)&persons[i].dir, &persons[i].movmentAmplitute);
         #ifdef DEBUG
-            fprintf(stderr, "%d %d %d %d %d %d\n", persons[i].id, persons[i].x, persons[i].y, (int)persons[i].status, (int)persons[i].dir, persons[i].movmentAmplitute);
+            fprintf(stderr, "%d %d %d %d %d %d\n", persons[i].id, persons[i].coords.x, persons[i].coords.y, (int)persons[i].status, (int)persons[i].dir, persons[i].movmentAmplitute);
         #endif
     }
 
@@ -61,6 +64,57 @@ void initializeSimulationParameters(FILE *f, int *n, int *m, int *size){
     #ifdef DEBUG
         fprintf(stderr, "Simulation size: %dx%d, with population of %d\n", *n, *m, *size);
     #endif
+}
+
+int coordsOutside(int x, int y, int n, int m){
+    return x < 0 || y < 0 || x >= m || y >= n;
+}
+
+
+coords_t nextCoords(coords_t coords, int n, int m, cardinalDirections_e dir, int amplitute, cardinalDirections_e *newDirection){
+    *newDirection = dir;
+
+    if(dir == N){
+        coords.y -= amplitute;
+        if(coords.y < 0){
+            coords.y *= -1;
+            *newDirection = S;
+        }
+        return coords;
+    }
+
+    if(dir == S){
+        coords.y += amplitute;
+        if(coords.y >= n){
+            coords.y = (n - 1) - (coords.y - (n - 1));
+            *newDirection = N;
+        }
+        return coords;
+    }
+
+    if(dir == E){
+        coords.x += amplitute;
+        if(coords.x >= m){
+            coords.x = (m - 1) - (coords.x - (m - 1));
+            *newDirection = W;
+        }
+        return coords;
+
+    }
+
+    if(dir == W){
+        coords.x -= amplitute;
+        if(coords.x < 0){
+            coords.x *= -1;
+            *newDirection = E;
+        }
+        return coords;
+    }
+  
+
+    //shouldn't be able to reach here 
+    return coords;
+
 }
 
 
@@ -81,10 +135,10 @@ int main(int argc, char **argv)
     }
 
     initializeSimulationParameters(f, &n, &m, &size);
-    person_t *popluation = getPopulation(f, size);
+    person_t *population = getPopulation(f, size);
     fclose(f);
 
-
+    
 
 
     return 0;
