@@ -51,7 +51,7 @@ person_t *getPopulation(FILE *f, int size){
     }
 
     #ifdef DEBUG
-        fprintf(stderr, "Finished reading persons\n");
+        fprintf(stderr, "Finished reading persons\n\n");
     #endif
 
     return persons;
@@ -117,6 +117,19 @@ coords_t nextCoords(coords_t coords, int n, int m, cardinalDirections_e dir, int
 
 }
 
+void updatePositions(person_t *persons, int size, int n, int m, int round){
+
+    #ifdef DEBUG
+        fprintf(stderr, "Coords for t = %d\n", round);
+    #endif
+    for(int i = 0; i < size; i++){
+        persons[i].coords = nextCoords(persons[i].coords, n, m, persons[i].dir, persons[i].movmentAmplitute, &persons[i].dir);
+        #ifdef DEBUG
+            fprintf(stderr, "%d | %d %d\n", persons[i].id, persons[i].coords.x, persons[i].coords.y);
+        #endif
+    }
+
+}
 
 int main(int argc, char **argv)
 {
@@ -135,11 +148,9 @@ int main(int argc, char **argv)
     }
 
     initializeSimulationParameters(f, &n, &m, &size);
-    person_t *population = getPopulation(f, size);
+    person_t *persons = getPopulation(f, size);
     fclose(f);
-
     
-
 
     return 0;
 }
