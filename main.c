@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
 
 #define DEBUG
 
@@ -25,10 +27,15 @@ typedef struct{
     int id;
     coords_t coords;
     status_e status;
+    status_e futureStatus;
     cardinalDirections_e dir;
     int movmentAmplitute;
 }person_t;
 
+typedef struct{
+    int data;
+    //anticipating for the future when i test stuff
+}paddedInt_t;
 
 
 person_t *getPopulation(FILE *f, int size){
@@ -117,12 +124,12 @@ coords_t nextCoords(coords_t coords, int n, int m, cardinalDirections_e dir, int
 
 }
 
-void updatePositions(person_t *persons, int size, int n, int m, int round){
+void updatePositions(person_t *persons, int start, int end, int n, int m, int round){
 
     #ifdef DEBUG
         fprintf(stderr, "Coords for t = %d\n", round);
     #endif
-    for(int i = 0; i < size; i++){
+    for(int i = start; i < end; i++){
         persons[i].coords = nextCoords(persons[i].coords, n, m, persons[i].dir, persons[i].movmentAmplitute, &persons[i].dir);
         #ifdef DEBUG
             fprintf(stderr, "%d | %d %d\n", persons[i].id, persons[i].coords.x, persons[i].coords.y);
@@ -130,6 +137,14 @@ void updatePositions(person_t *persons, int size, int n, int m, int round){
     }
 
 }
+
+
+
+void makeContagionZone(paddedInt_t *contagionZone, int x, int y, int m){
+    contagionZone[y*m+x].data = 1;
+}
+
+
 
 int main(int argc, char **argv)
 {
@@ -151,6 +166,19 @@ int main(int argc, char **argv)
     person_t *persons = getPopulation(f, size);
     fclose(f);
     
+    //1 = someone infected is there, 0 = nope
+    paddedInt_t *contagionZone = malloc(sizeof(paddedInt_t)*n*m);
+    if(contagionZone == NULL){
+        perror("Could not initiate contagious zones");
+        exit(-1);
+    }
+    memset(contagionZone, 0, sizeof(paddedInt_t)*n*m);
 
+
+
+
+
+    free(contagionZone);
+    free(persons);
     return 0;
 }
