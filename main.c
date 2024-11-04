@@ -5,11 +5,11 @@
 
 
 //#define DEBUG
-#define INFECTION_RATE 1
 #define IMMUNE_DURATION 0
 #define INFECTED_DURATION 50
 #define MAX_PATH 256
 #define PATH_EXTENSION_SIZE 4
+#define PADDING_SIZE 60
 
 typedef enum{
     INFECTED = 0,
@@ -47,7 +47,7 @@ typedef struct{
 
 typedef struct{
     int data;
-    //anticipating for the future when i test stuff
+    char padding[PADDING_SIZE];
 }paddedInt_t;
 
 typedef struct{
@@ -198,7 +198,7 @@ void updateFutureStatus(paddedInt_t *contagionZone, person_t *persons, int start
     for(int i = start; i < end; i++){
         persons[i].futureStatus = persons[i].status;
         if(persons[i].status.status == SUSCEPTIBLE) {
-            if(coordIsContagious(contagionZone, persons[i].coords, m) && rand()/(float)RAND_MAX <= INFECTION_RATE){
+            if(coordIsContagious(contagionZone, persons[i].coords, m)){
                 persons[i].futureStatus.status = INFECTED;
                 persons[i].futureStatus.infectionCounter++;
                 persons[i].futureStatus.infectionTime = INFECTED_DURATION;
@@ -392,6 +392,7 @@ void parallelEpidemic(int n, int m, int populationSize, person_t *persons, int r
         pthread_barrier_init(defaultPayload.printBarrier, NULL, threadNum);
     #endif
 
+
     for(int i = 0; i < threadNum; i++){
         
         payloads[i] = defaultPayload;
@@ -403,6 +404,7 @@ void parallelEpidemic(int n, int m, int populationSize, person_t *persons, int r
     {
         pthread_join(threads[i], NULL);
     }
+    
 
     pthread_barrier_destroy(defaultPayload.positionBarrier);
     pthread_barrier_destroy(defaultPayload.nextIterationBarrier);
@@ -488,7 +490,10 @@ void checkPersonsVectorEquality(person_t *v1, person_t *v2, int populationSize){
 int main(int argc, char **argv)
 {
     int n, m, populationSize;
-   
+    struct timespec start, finish;
+    double elapsedSerial, elapsedParallel;
+
+
     if(argc != 4){
         fprintf(stderr, "Required arguments: simulation_time input_file thread_num\n");
         exit(-1);
@@ -514,13 +519,26 @@ int main(int argc, char **argv)
         
     
     //serial
+    clock_gettime(CLOCK_MONOTONIC, &start);
     serialEpidemic(n, m, populationSize, personsSerial, simulationTime);
+    clock_gettime(CLOCK_MONOTONIC, &finish);
+
+    elapsedSerial = (finish.tv_sec - start.tv_sec);
+    elapsedSerial += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
 
     //parallel
+    clock_gettime(CLOCK_MONOTONIC, &start); 
     parallelEpidemic(n, m, populationSize, personsParallel, simulationTime, threadNum);
+    clock_gettime(CLOCK_MONOTONIC, &finish);
+
+    elapsedParallel = (finish.tv_sec - start.tv_sec);
+    elapsedParallel += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+
 
     writeResults(personsSerial, personsParallel, populationSize, path);
     checkPersonsVectorEquality(personsParallel, personsSerial, populationSize);
+
+    fprintf(stderr, "t_serial = %f\nt_parallel = %f\nspeedup = %f\n", elapsedSerial, elapsedParallel, elapsedSerial/elapsedParallel);
 
     free(personsParallel);
     free(personsSerial);
