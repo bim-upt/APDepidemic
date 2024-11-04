@@ -177,7 +177,7 @@ void updatePositionsAndContagionZone(person_t *persons, int start, int end, int 
 
     for(int i = start; i < end; i++){
         persons[i].coords = nextCoords(persons[i].coords, n, m, persons[i].dir, persons[i].movementAmplitute, &persons[i].dir);
-        if(persons[i].status.status == INFECTED){
+        if(persons[i].status.status == INFECTED && !contagionZone[persons[i].coords.y*m + persons[i].coords.x].data){
             makeContagionZone(contagionZone, persons[i].coords, m);
         }
     }
