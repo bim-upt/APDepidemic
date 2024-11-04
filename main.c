@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 
 
 #define DEBUG
@@ -47,9 +48,20 @@ typedef struct{
     //anticipating for the future when i test stuff
 }paddedInt_t;
 
+typedef struct{
+    int n;
+    int m;
+    int populationSize;
+    int rounds;
+    int threadNum;
+    int rank;
+    person_t *persons;
+    paddedInt_t *contagionZone;
+}epidemic_DTO;
 
-person_t *getPopulation(FILE *f, int size){
-    person_t *persons = malloc(sizeof(person_t)*size);
+
+person_t *getPopulation(FILE *f, int populationSize){
+    person_t *persons = malloc(sizeof(person_t)*populationSize);
     if(persons == NULL){
         perror("Could not initialize persons vector");
         exit(-1);
@@ -59,7 +71,7 @@ person_t *getPopulation(FILE *f, int size){
         fprintf(stderr, "Reading persons:\n");
     #endif
 
-    for(int i = 0; i < size; i++){
+    for(int i = 0; i < populationSize; i++){
         //id x y status dir amplitute
         fscanf(f, "%d %d %d %d %d %d", &persons[i].id, &persons[i].coords.x, &persons[i].coords.y, (int*)&persons[i].status, (int*)&persons[i].dir, &persons[i].movementAmplitute);
         
@@ -83,12 +95,12 @@ person_t *getPopulation(FILE *f, int size){
     return persons;
 }
 
-void initializeSimulationParameters(FILE *f, int *n, int *m, int *size){
+void initializeSimulationParameters(FILE *f, int *n, int *m, int *populationSize){
     
-    fscanf(f, "%d %d", n, m); //get grid size
-    fscanf(f, "%d", size);  //get population size
+    fscanf(f, "%d %d", n, m); //get grid populationSize
+    fscanf(f, "%d", populationSize);  //get population populationSize
     #ifdef DEBUG
-        fprintf(stderr, "Simulation size: %dx%d, with population of %d\n", *n, *m, *size);
+        fprintf(stderr, "Simulation populationSize: %dx%d, with population of %d\n", *n, *m, *populationSize);
     #endif
 }
 
@@ -143,25 +155,23 @@ coords_t nextCoords(coords_t coords, int n, int m, cardinalDirections_e dir, int
 
 }
 
-void updatePositions(person_t *persons, int start, int end, int n, int m, int round){
-
-    for(int i = start; i < end; i++){
-        persons[i].coords = nextCoords(persons[i].coords, n, m, persons[i].dir, persons[i].movementAmplitute, &persons[i].dir);
-    }
-
-}
-
 void makeContagionZone(paddedInt_t *contagionZone, coords_t coords, int m){
     contagionZone[coords.y*m+coords.x].data = 1;
 }
 
-void updateContagionZone(person_t *persons, paddedInt_t *contagionZone, int start, int end, int m){
+
+void updatePositionsAndContagionZone(person_t *persons, int start, int end, int n, int m, int round, paddedInt_t *contagionZone){
+
     for(int i = start; i < end; i++){
+        persons[i].coords = nextCoords(persons[i].coords, n, m, persons[i].dir, persons[i].movementAmplitute, &persons[i].dir);
         if(persons[i].status.status == INFECTED){
             makeContagionZone(contagionZone, persons[i].coords, m);
         }
     }
+
 }
+
+
 
 
 int coordIsContagious(paddedInt_t *contagionZone, coords_t coords, int m){
@@ -241,7 +251,10 @@ void printVector(paddedInt_t *v, int n, int m){
     }
 }
 
-void serialEpidemic(int n, int m, int size, person_t *persons, int rounds){
+
+
+void serialEpidemic(int n, int m, int populationSize, person_t *persons, int rounds){
+
     //1 = someone infected is there, 0 = nope
     paddedInt_t *contagionZone = malloc(sizeof(paddedInt_t)*n*m);
     if(contagionZone == NULL){
@@ -251,44 +264,121 @@ void serialEpidemic(int n, int m, int size, person_t *persons, int rounds){
     memset(contagionZone, 0, sizeof(paddedInt_t)*n*m);
 
     for(int i = 0; i < rounds; i++){
-        updatePositions(persons, 0, size, n, m, i);
-        updateContagionZone(persons, contagionZone, 0, size, m);
-        //in paralel a barrier here probs
-        updateFutureStatus(contagionZone, persons, 0, size, m);
-        updateStatus(persons, 0, size, i);
-        //fprintf(stderr, "%d\n", (int)persons[0].status.status);
+        updatePositionsAndContagionZone(persons, 0, populationSize, n, m, i, contagionZone);
+        updateFutureStatus(contagionZone, persons, 0, populationSize, m);
+        updateStatus(persons, 0, populationSize, i);
         #ifdef DEBUG
-            //printVector(contagionZone,n,m);
+            printVector(contagionZone,n,m);
         #endif
         resetContagionZone(contagionZone, 0, m*n);
     }
+    free(contagionZone);
+}
 
+
+void *parallelEpidemic_thread(void *payload){
+    epidemic_DTO data = *(epidemic_DTO*)payload;
+    int rounds = data.rounds;
+    person_t *persons = data.persons;
+    int populationSize = data.populationSize;
+    int n = data.n;
+    int m = data.m;
+    paddedInt_t *contagionZone = data.contagionZone;
+    int rank = data.rank;
+    int threadNum = data.threadNum;
+
+    int workloadSize = populationSize/threadNum;
+    int rest;
+    if (rank == threadNum - 1){
+        rest = n % threadNum;
+    }else{
+        rest = 0;
+    }
+    int start = rank*workloadSize;
+    int end = (rank+1)*workloadSize + rest;
+
+    for(int i = 0; i < rounds; i++){
+        updatePositionsAndContagionZone(persons, start, end, n, m, i, contagionZone);
+        
+        updateFutureStatus(contagionZone, persons, 0, populationSize, m);
+        updateStatus(persons, 0, populationSize, i);
+        resetContagionZone(contagionZone, 0, m*n);
+    }
+
+
+}
+
+epidemic_DTO dataToEpidemicDTO(int n, int m, int populationSize, person_t *persons, int rounds, int threadNum, int rank, paddedInt_t *contagion){
+    epidemic_DTO payload;
+    payload.n = n;
+    payload.m = m;
+    payload.persons = persons;
+    payload.rounds = rounds;
+    payload.populationSize = populationSize;
+    payload.rank = rank;
+    payload.threadNum = threadNum;
+    payload.contagionZone = contagion;
+    return payload;
+}
+
+void parallelEpidemic(int n, int m, int populationSize, person_t *persons, int rounds, int threadNum){
+    pthread_t *threads = malloc(sizeof(pthread_t)*threadNum);
+    epidemic_DTO *payloads = malloc(sizeof(epidemic_DTO)*threadNum);
+    paddedInt_t *contagionZone = malloc(sizeof(paddedInt_t)*n*m);
+    if(contagionZone == NULL){
+        perror("Could not initiate contagious zones");
+        exit(-1);
+    }
+    memset(contagionZone, 0, sizeof(paddedInt_t)*n*m);
+    if(threads == NULL || payloads == NULL){
+        perror("Could not create thread array");
+        exit(-1);
+    }
+
+    for(int i = 0; i < threadNum; i++){
+        epidemic_DTO auxPayload = dataToEpidemicDTO(n, m, populationSize, persons, rounds, threadNum, i, contagionZone);
+        payloads[i] = auxPayload;
+        pthread_create(&threads[i], NULL, parallelEpidemic_thread, (void *)&payloads[i]);
+    }
+
+    for (int i = 0; i < threadNum; i++)
+    {
+        pthread_join(threads[i], NULL);
+    }
 
     free(contagionZone);
 }
 
 
+
 int main(int argc, char **argv)
 {
-    int n, m, size;
-
-    if(argc != 2){
-        fprintf(stderr, "Required arguments: input_file\n");
+    int n, m, populationSize;
+   
+    if(argc != 4){
+        fprintf(stderr, "Required arguments: simulation_time input_file thread_num\n");
         exit(-1);
     }
 
+    int simulationTime;
+    int threadNum;
+    sscanf(argv[1], "%d", &simulationTime);
+    sscanf(argv[3], "%d", &threadNum);
+
     //initialization
-    FILE *f = fopen(argv[1], "r");
+    FILE *f = fopen(argv[2], "r");
     if(f == NULL){
         perror("Could not open initialization file");
         exit(-1);
     }
 
-    initializeSimulationParameters(f, &n, &m, &size);
-    person_t *persons = getPopulation(f, size);
+    initializeSimulationParameters(f, &n, &m, &populationSize);
+    person_t *persons = getPopulation(f, populationSize);
     fclose(f);
+        
     
-    serialEpidemic(n, m, size, persons, 2);
+    //serial
+    serialEpidemic(n, m, populationSize, persons, simulationTime);
 
 
 
