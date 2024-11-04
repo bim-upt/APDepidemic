@@ -6,7 +6,7 @@
 
 //#define DEBUG
 #define IMMUNE_DURATION 0
-#define INFECTED_DURATION 50
+#define INFECTED_DURATION 7
 #define MAX_PATH 256
 #define PATH_EXTENSION_SIZE 4
 #define PADDING_SIZE 60
@@ -81,7 +81,7 @@ person_t *getPopulation(FILE *f, int populationSize){
     }
 
     #ifdef DEBUG
-        fprintf(stderr, "Reading persons:\n");
+        fprintf(stdout, "Reading persons:\n");
     #endif
 
     for(int i = 0; i < populationSize; i++){
@@ -97,12 +97,12 @@ person_t *getPopulation(FILE *f, int populationSize){
         }
 
         #ifdef DEBUG
-            fprintf(stderr, "%d %d %d %d %d %d\n", persons[i].id, persons[i].coords.x, persons[i].coords.y, (int)persons[i].status.status, (int)persons[i].dir, persons[i].movementAmplitute);
+            fprintf(stdout, "%d %d %d %d %d %d\n", persons[i].id, persons[i].coords.x, persons[i].coords.y, (int)persons[i].status.status, (int)persons[i].dir, persons[i].movementAmplitute);
         #endif
     }
 
     #ifdef DEBUG
-        fprintf(stderr, "Finished reading persons\n\n");
+        fprintf(stdout, "Finished reading persons\n\n");
     #endif
 
     return persons;
@@ -113,7 +113,7 @@ void initializeSimulationParameters(FILE *f, int *n, int *m, int *populationSize
     fscanf(f, "%d %d", m, n); //get grid size
     fscanf(f, "%d", populationSize);  //get populationSize
     #ifdef DEBUG
-        fprintf(stderr, "Simulation populationSize: %dx%d, with population of %d\n", *n, *m, *populationSize);
+        fprintf(stdout, "Simulation populationSize: %dx%d, with population of %d\n", *n, *m, *populationSize);
     #endif
 }
 
@@ -243,7 +243,7 @@ void updateStatus(person_t *persons, int start, int end, int rank){
             }else{
                 nxtStatus = "INFECTED";
             }
-            fprintf(stderr, "thread %d - id: %d | (%d,%d) | %s -> %s | imn time: %d | inf time: %d | inf count: %d\n", rank, persons[i].id, persons[i].coords.x, persons[i].coords.y, status, nxtStatus, persons[i].status.immuneTime, persons[i].status.infectionTime, persons[i].status.infectionCounter);
+            fprintf(stdout, "thread %d - id: %d | (%d,%d) | %s -> %s | imn time: %d | inf time: %d | inf count: %d\n", rank, persons[i].id, persons[i].coords.x, persons[i].coords.y, status, nxtStatus, persons[i].status.immuneTime, persons[i].status.infectionTime, persons[i].status.infectionCounter);
         #endif
         persons[i].status = persons[i].futureStatus;
     }
@@ -256,9 +256,9 @@ void resetContagionZone(paddedInt_t *contagionZone, int start, int nmem){
 void printVector(paddedInt_t *v, int n, int m){
     for(int i = 0; i < n; i++){
         for(int j = 0; j < m; j++){
-            fprintf(stderr, "%d ", v[i*m+j].data);
+            fprintf(stdout, "%d ", v[i*m+j].data);
         }
-        fprintf(stderr, "\n");
+        fprintf(stdout, "\n");
     }
 }
 
@@ -311,7 +311,7 @@ void *parallelEpidemic_thread(void *payload){
     for(int i = 0; i < rounds; i++){
         #ifdef DEBUG
             if(rank == threadNum - 1){
-                fprintf(stderr, "\nt = %d\n", i);
+                fprintf(stdout, "\nt = %d\n", i);
             }
         #endif
         updatePositionsAndContagionZone(persons, start, end, n, m, i, contagionZone);
@@ -480,11 +480,11 @@ int samePerson(person_t a, person_t b){
 void checkPersonsVectorEquality(person_t *v1, person_t *v2, int populationSize){
     for(int i = 0; i < populationSize; i++){
         if(!samePerson(v1[i], v2[i])){
-            fprintf(stderr, "WARNING: parallel and serial results differ\n");
+            fprintf(stdout, "WARNING: parallel and serial results differ\n");
             return;
         }
     }
-    fprintf(stderr, "Parallel and serial results are the same\n");
+    fprintf(stdout, "Parallel and serial results are the same\n");
 }
 
 int main(int argc, char **argv)
@@ -495,7 +495,7 @@ int main(int argc, char **argv)
 
 
     if(argc != 4){
-        fprintf(stderr, "Required arguments: simulation_time input_file thread_num\n");
+        fprintf(stdout, "Required arguments: simulation_time input_file thread_num, only %d arguments are present\n", argc-1);
         exit(-1);
     }
 
@@ -538,7 +538,10 @@ int main(int argc, char **argv)
     writeResults(personsSerial, personsParallel, populationSize, path);
     checkPersonsVectorEquality(personsParallel, personsSerial, populationSize);
 
-    fprintf(stderr, "t_serial = %f\nt_parallel = %f\nspeedup = %f\n", elapsedSerial, elapsedParallel, elapsedSerial/elapsedParallel);
+    //fprintf(stdout, "populationSize, simulationTime, threads, t_serial, t_parallel, speedup\n");
+    //fprintf(stdout, "%d, %d, %d, %f, %f, %f\n", populationSize, simulationTime, threadNum, elapsedSerial, elapsedParallel, elapsedSerial/elapsedParallel);
+
+    fprintf(stdout, "t_serial = %f\nt_parallel = %f\nspeedup = %f\n", elapsedSerial, elapsedParallel, elapsedSerial/elapsedParallel);
 
     free(personsParallel);
     free(personsSerial);
