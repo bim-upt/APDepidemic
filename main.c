@@ -57,7 +57,18 @@ typedef struct{
     int rank;
     person_t *persons;
     paddedInt_t *contagionZone;
+    pthread_barrier_t *positionBarrier;
+    #ifdef DEBUG
+        pthread_barrier_t *printBarrier;
+    #endif
+    pthread_barrier_t *statusBarrier;
+    
+    pthread_barrier_t *nextIterationBarrier;
 }epidemic_DTO;
+
+
+
+
 
 
 person_t *getPopulation(FILE *f, int populationSize){
@@ -209,10 +220,8 @@ void updateFutureStatus(paddedInt_t *contagionZone, person_t *persons, int start
     }
 }
 
-void updateStatus(person_t *persons, int start, int end, int round){
-    #ifdef DEBUG
-        fprintf(stderr, "\n\nstatus for t = %d\n",round);
-    #endif
+void updateStatus(person_t *persons, int start, int end, int rank){
+    
     for(int i = start; i < end; i++){
         #ifdef DEBUG
             char *status;
@@ -232,7 +241,7 @@ void updateStatus(person_t *persons, int start, int end, int round){
             }else{
                 nxtStatus = "INFECTED";
             }
-            fprintf(stderr, "id: %d | (%d,%d) | %s -> %s | imn time: %d | inf time: %d | inf count: %d\n", persons[i].id, persons[i].coords.x, persons[i].coords.y, status, nxtStatus, persons[i].status.immuneTime, persons[i].status.infectionTime, persons[i].status.infectionCounter);
+            fprintf(stderr, "thread %d - id: %d | (%d,%d) | %s -> %s | imn time: %d | inf time: %d | inf count: %d\n", rank, persons[i].id, persons[i].coords.x, persons[i].coords.y, status, nxtStatus, persons[i].status.immuneTime, persons[i].status.infectionTime, persons[i].status.infectionCounter);
         #endif
         persons[i].status = persons[i].futureStatus;
     }
@@ -266,7 +275,7 @@ void serialEpidemic(int n, int m, int populationSize, person_t *persons, int rou
     for(int i = 0; i < rounds; i++){
         updatePositionsAndContagionZone(persons, 0, populationSize, n, m, i, contagionZone);
         updateFutureStatus(contagionZone, persons, 0, populationSize, m);
-        updateStatus(persons, 0, populationSize, i);
+        updateStatus(persons, 0, populationSize, 0);
         #ifdef DEBUG
             printVector(contagionZone,n,m);
         #endif
@@ -290,7 +299,7 @@ void *parallelEpidemic_thread(void *payload){
     int workloadSize = populationSize/threadNum;
     int rest;
     if (rank == threadNum - 1){
-        rest = n % threadNum;
+        rest = populationSize % threadNum;
     }else{
         rest = 0;
     }
@@ -298,14 +307,32 @@ void *parallelEpidemic_thread(void *payload){
     int end = (rank+1)*workloadSize + rest;
 
     for(int i = 0; i < rounds; i++){
+        #ifdef DEBUG
+            if(rank == threadNum - 1){
+                fprintf(stderr, "\nt = %d\n", i);
+            }
+        #endif
         updatePositionsAndContagionZone(persons, start, end, n, m, i, contagionZone);
+        pthread_barrier_wait(data.positionBarrier);
         
-        updateFutureStatus(contagionZone, persons, 0, populationSize, m);
-        updateStatus(persons, 0, populationSize, i);
-        resetContagionZone(contagionZone, 0, m*n);
+
+        updateFutureStatus(contagionZone, persons, start, end, m);
+        updateStatus(persons, start, end, rank);
+        pthread_barrier_wait(data.statusBarrier);
+        
+        #ifdef DEBUG
+            if(rank == threadNum - 1){
+                printVector(contagionZone, n, m);
+            }
+            pthread_barrier_wait(data.printBarrier);
+        #endif
+
+
+        resetContagionZone(contagionZone, ((n*m)/threadNum)*rank, (n*m)/threadNum + (rank == threadNum - 1 ? (n*m) % threadNum : 0));
+        pthread_barrier_wait(data.nextIterationBarrier);
     }
 
-
+    return NULL;
 }
 
 epidemic_DTO dataToEpidemicDTO(int n, int m, int populationSize, person_t *persons, int rounds, int threadNum, int rank, paddedInt_t *contagion){
@@ -321,6 +348,9 @@ epidemic_DTO dataToEpidemicDTO(int n, int m, int populationSize, person_t *perso
     return payload;
 }
 
+
+
+
 void parallelEpidemic(int n, int m, int populationSize, person_t *persons, int rounds, int threadNum){
     pthread_t *threads = malloc(sizeof(pthread_t)*threadNum);
     epidemic_DTO *payloads = malloc(sizeof(epidemic_DTO)*threadNum);
@@ -335,9 +365,36 @@ void parallelEpidemic(int n, int m, int populationSize, person_t *persons, int r
         exit(-1);
     }
 
+
+
+    epidemic_DTO defaultPayload = dataToEpidemicDTO(n, m, populationSize, persons, rounds, threadNum, 0, contagionZone);
+    defaultPayload.positionBarrier = malloc(sizeof(pthread_barrier_t));
+    defaultPayload.nextIterationBarrier = malloc(sizeof(pthread_barrier_t));
+    defaultPayload.statusBarrier = malloc(sizeof(pthread_barrier_t));
+    #ifdef DEBUG
+        defaultPayload.printBarrier = malloc(sizeof(pthread_barrier_t));
+        if(defaultPayload.printBarrier == NULL){
+            perror("Could not initialize barriers");
+            exit(-1);
+        }
+    #endif
+    if(defaultPayload.positionBarrier == NULL || defaultPayload.nextIterationBarrier == NULL || defaultPayload.statusBarrier == NULL){
+        perror("Could not initialize barriers");
+        exit(-1);
+    }
+
+    pthread_barrier_init(defaultPayload.positionBarrier, NULL, threadNum);
+    pthread_barrier_init(defaultPayload.nextIterationBarrier, NULL, threadNum);
+    pthread_barrier_init(defaultPayload.statusBarrier, NULL, threadNum);
+    #ifdef DEBUG
+        pthread_barrier_init(defaultPayload.printBarrier, NULL, threadNum);
+    #endif
+
+    fprintf(stderr, "Init complete\n");
     for(int i = 0; i < threadNum; i++){
-        epidemic_DTO auxPayload = dataToEpidemicDTO(n, m, populationSize, persons, rounds, threadNum, i, contagionZone);
-        payloads[i] = auxPayload;
+        
+        payloads[i] = defaultPayload;
+        payloads[i].rank = i;
         pthread_create(&threads[i], NULL, parallelEpidemic_thread, (void *)&payloads[i]);
     }
 
@@ -346,8 +403,21 @@ void parallelEpidemic(int n, int m, int populationSize, person_t *persons, int r
         pthread_join(threads[i], NULL);
     }
 
+    pthread_barrier_destroy(defaultPayload.positionBarrier);
+    pthread_barrier_destroy(defaultPayload.nextIterationBarrier);
+    pthread_barrier_destroy(defaultPayload.statusBarrier);
+    #ifdef DEBUG
+        pthread_barrier_destroy(defaultPayload.printBarrier);
+        free(defaultPayload.printBarrier);
+    #endif
     free(contagionZone);
+    free(threads);
+    free(defaultPayload.positionBarrier);
+    free(defaultPayload.nextIterationBarrier);
+    free(defaultPayload.statusBarrier);
+    free(payloads);
 }
+
 
 
 
@@ -378,8 +448,10 @@ int main(int argc, char **argv)
         
     
     //serial
-    serialEpidemic(n, m, populationSize, persons, simulationTime);
+    //serialEpidemic(n, m, populationSize, persons, simulationTime);
 
+
+    parallelEpidemic(n, m, populationSize, persons, simulationTime, threadNum);
 
 
 
