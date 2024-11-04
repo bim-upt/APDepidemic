@@ -4,10 +4,12 @@
 #include <pthread.h>
 
 
-#define DEBUG
+//#define DEBUG
 #define INFECTION_RATE 1
 #define IMMUNE_DURATION 0
 #define INFECTED_DURATION 50
+#define MAX_PATH 256
+#define PATH_EXTENSION_SIZE 4
 
 typedef enum{
     INFECTED = 0,
@@ -108,8 +110,8 @@ person_t *getPopulation(FILE *f, int populationSize){
 
 void initializeSimulationParameters(FILE *f, int *n, int *m, int *populationSize){
     
-    fscanf(f, "%d %d", n, m); //get grid populationSize
-    fscanf(f, "%d", populationSize);  //get population populationSize
+    fscanf(f, "%d %d", m, n); //get grid size
+    fscanf(f, "%d", populationSize);  //get populationSize
     #ifdef DEBUG
         fprintf(stderr, "Simulation populationSize: %dx%d, with population of %d\n", *n, *m, *populationSize);
     #endif
@@ -390,7 +392,6 @@ void parallelEpidemic(int n, int m, int populationSize, person_t *persons, int r
         pthread_barrier_init(defaultPayload.printBarrier, NULL, threadNum);
     #endif
 
-    fprintf(stderr, "Init complete\n");
     for(int i = 0; i < threadNum; i++){
         
         payloads[i] = defaultPayload;
@@ -419,7 +420,70 @@ void parallelEpidemic(int n, int m, int populationSize, person_t *persons, int r
 }
 
 
+void writePersonsToFile(person_t *persons, FILE *f, int populationSize){
+    fprintf(f, "id x y status inf_cout\n");
+    for(int i = 0; i < populationSize; i++){
+        char *status;
+        if(persons[i].status.status == SUSCEPTIBLE){
+            status = "SUSCEPTIBLE";
+        }else if(persons[i].status.status == IMMUNE){
+            status = "IMMUNE";
+        }else{
+            status = "INFECTED";
+        }
+        fprintf(f, "%d %d %d %s %d\n", persons[i].id, persons[i].coords.x, persons[i].coords.y, status, persons[i].status.infectionCounter);
+    }
+}
 
+void writeResults(person_t *personsSerial, person_t *personsParallel, int populationSize, char *path){
+    char serialPath[MAX_PATH], parallelPath[MAX_PATH];
+    strcpy(serialPath, path);
+    serialPath[strlen(serialPath) - PATH_EXTENSION_SIZE] = 0;
+    strcat(serialPath,"_serial_out.txt");
+
+    strcpy(parallelPath, path);
+    parallelPath[strlen(parallelPath) - PATH_EXTENSION_SIZE] = 0;
+    strcat(parallelPath,"_parallel_out.txt");
+
+    FILE *serialF = fopen(serialPath, "w");
+    FILE *parallelF = fopen(parallelPath, "w");
+    if(serialF == NULL || parallelF == NULL){
+        perror("Could not create output files");
+        exit(-1);
+    }
+
+    writePersonsToFile(personsSerial, serialF, populationSize);
+    writePersonsToFile(personsParallel, parallelF, populationSize);
+
+    fclose(serialF);
+    fclose(parallelF);
+}
+
+person_t *copyPersonsVector(person_t *persons, int populationSize){
+    person_t *copy = malloc(sizeof(person_t)*populationSize);
+    if(copy == NULL){
+        perror("Could not create persons copy");
+        exit(-1);
+    }
+    for(int i = 0; i < populationSize; i++){
+        copy[i] = persons[i];
+    }
+    return copy;
+}
+
+int samePerson(person_t a, person_t b){
+    return a.coords.x == b.coords.x && a.coords.y == b.coords.y && a.status.status == b.status.status && a.status.infectionCounter == b.status.infectionCounter && a.id == b.id;
+}
+
+void checkPersonsVectorEquality(person_t *v1, person_t *v2, int populationSize){
+    for(int i = 0; i < populationSize; i++){
+        if(!samePerson(v1[i], v2[i])){
+            fprintf(stderr, "WARNING: parallel and serial results differ\n");
+            return;
+        }
+    }
+    fprintf(stderr, "Parallel and serial results are the same\n");
+}
 
 int main(int argc, char **argv)
 {
@@ -436,26 +500,29 @@ int main(int argc, char **argv)
     sscanf(argv[3], "%d", &threadNum);
 
     //initialization
-    FILE *f = fopen(argv[2], "r");
+    char *path = argv[2];
+    FILE *f = fopen(path, "r");
     if(f == NULL){
         perror("Could not open initialization file");
         exit(-1);
     }
 
     initializeSimulationParameters(f, &n, &m, &populationSize);
-    person_t *persons = getPopulation(f, populationSize);
+    person_t *personsSerial = getPopulation(f, populationSize);
+    person_t *personsParallel = copyPersonsVector(personsSerial, populationSize);
     fclose(f);
         
     
     //serial
-    //serialEpidemic(n, m, populationSize, persons, simulationTime);
+    serialEpidemic(n, m, populationSize, personsSerial, simulationTime);
 
+    //parallel
+    parallelEpidemic(n, m, populationSize, personsParallel, simulationTime, threadNum);
 
-    parallelEpidemic(n, m, populationSize, persons, simulationTime, threadNum);
+    writeResults(personsSerial, personsParallel, populationSize, path);
+    checkPersonsVectorEquality(personsParallel, personsSerial, populationSize);
 
-
-
-
-    free(persons);
+    free(personsParallel);
+    free(personsSerial);
     return 0;
 }
