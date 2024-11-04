@@ -487,6 +487,8 @@ void checkPersonsVectorEquality(person_t *v1, person_t *v2, int populationSize){
     fprintf(stdout, "Parallel and serial results are the same\n");
 }
 
+
+//https://github.com/bim-upt/APDepidemic
 int main(int argc, char **argv)
 {
     int n, m, populationSize;
