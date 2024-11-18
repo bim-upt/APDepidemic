@@ -276,6 +276,9 @@ void serialEpidemic(int n, int m, int populationSize, person_t *persons, int rou
     memset(contagionZone, 0, sizeof(paddedInt_t)*n*m);
 
     for(int i = 0; i < rounds; i++){
+        #ifdef DEBUG
+            fprintf(stdout, "\nt = %d\n", i);
+        #endif
         updatePositionsAndContagionZone(persons, 0, populationSize, n, m, i, contagionZone);
         updateFutureStatus(contagionZone, persons, 0, populationSize, m);
         updateStatus(persons, 0, populationSize, 0);
@@ -353,7 +356,7 @@ epidemic_DTO dataToEpidemicDTO(int n, int m, int populationSize, person_t *perso
 
 
 
-
+//manual data partition
 void parallelEpidemicV2(int n, int m, int populationSize, person_t *persons, int rounds, int threadNum){
     pthread_t *threads = malloc(sizeof(pthread_t)*threadNum);
     epidemic_DTO *payloads = malloc(sizeof(epidemic_DTO)*threadNum);
@@ -423,6 +426,58 @@ void parallelEpidemicV2(int n, int m, int populationSize, person_t *persons, int
 }
 
 
+//parallel for
+void parallelEpidemicV1(int n, int m, int populationSize, person_t *persons, int rounds){
+
+    //1 = someone infected is there, 0 = nope
+    paddedInt_t *contagionZone = malloc(sizeof(paddedInt_t)*n*m);
+    if(contagionZone == NULL){
+        perror("Could not initiate contagious zones");
+        exit(-1);
+    }
+    memset(contagionZone, 0, sizeof(paddedInt_t)*n*m);
+
+
+    #pragma omp parallel
+    for(int i = 0; i < rounds; i++){
+        #ifdef DEBUG
+            #pragma omp single
+            fprintf(stdout, "\nt = %d\n", i);
+            #pragma omp barrier
+        #endif
+
+        #pragma omp for
+        for(int j = 0; j < populationSize; j++){
+            updatePositionsAndContagionZone(persons, j, j+1, n, m, i, contagionZone);
+        }
+
+
+        #pragma omp for
+        for(int j = 0; j < populationSize; j++){
+            updateFutureStatus(contagionZone, persons, j, j+1, m);
+            updateStatus(persons, j, j+1, omp_get_thread_num());
+        }
+
+
+
+        #ifdef DEBUG
+            #pragma omp single
+            printVector(contagionZone,n,m);
+            #pragma omp barrier
+        #endif
+
+        
+        resetContagionZone(contagionZone, ((n*m)/omp_get_num_threads())*omp_get_thread_num(), (n*m)/omp_get_num_threads() + (omp_get_thread_num() == omp_get_num_threads() - 1 ? (n*m) % omp_get_num_threads() : 0));
+        #pragma omp barrier
+    }
+
+
+    free(contagionZone);
+}
+
+
+
+
 void writePersonsToFile(person_t *persons, FILE *f, int populationSize){
     fprintf(f, "id x y status inf_cout\n");
     for(int i = 0; i < populationSize; i++){
@@ -487,7 +542,7 @@ int main(int argc, char **argv)
 {
     int n, m, populationSize;
     struct timespec start, finish;
-    double elapsedSerial, elapsedParallel;
+    double elapsedSerial, elapsedParallelV2, elapsedParallelV1;
 
 
     if(argc != 4){
@@ -510,8 +565,10 @@ int main(int argc, char **argv)
 
     initializeSimulationParameters(f, &n, &m, &populationSize);
     person_t *personsSerial = getPopulation(f, populationSize);
-    person_t *personsParallelV2 = copyPersonsVector(personsSerial, populationSize);
     fclose(f);
+    person_t *personsParallelV2 = copyPersonsVector(personsSerial, populationSize);
+    person_t *personsParallelV1 = copyPersonsVector(personsSerial, populationSize);
+
         
     
     //serial
@@ -522,17 +579,35 @@ int main(int argc, char **argv)
     elapsedSerial = (finish.tv_sec - start.tv_sec);
     elapsedSerial += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
 
-    //parallel
+    //parallel V1
+    clock_gettime(CLOCK_MONOTONIC, &start); 
+    parallelEpidemicV1(n, m, populationSize, personsParallelV1, simulationTime);
+    clock_gettime(CLOCK_MONOTONIC, &finish);
+
+    elapsedParallelV1 = (finish.tv_sec - start.tv_sec);
+    elapsedParallelV1 += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+
+    
+    //parallel V2
     clock_gettime(CLOCK_MONOTONIC, &start); 
     parallelEpidemicV2(n, m, populationSize, personsParallelV2, simulationTime, threadNum);
     clock_gettime(CLOCK_MONOTONIC, &finish);
 
-    elapsedParallel = (finish.tv_sec - start.tv_sec);
-    elapsedParallel += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    elapsedParallelV2 = (finish.tv_sec - start.tv_sec);
+    elapsedParallelV2 += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
 
 
     writeResult(personsSerial, populationSize, path, "_serial_out.txt");
-    writeResult(personsSerial, populationSize, path, "_omp2_out.txt");
+    writeResult(personsParallelV1, populationSize, path, "_omp1_out.txt");
+    writeResult(personsParallelV2, populationSize, path, "_omp2_out.txt");
+    
+    if(!personsVectorsAreEqual(personsParallelV1, personsSerial, populationSize)){
+        fprintf(stdout, "WARNING: serial and parallel V1 differ\n");
+    }else{
+        fprintf(stdout, "serial and parallel V1 are the same\n");
+    }
+
+
     if(!personsVectorsAreEqual(personsParallelV2, personsSerial, populationSize)){
         fprintf(stdout, "WARNING: serial and parallel V2 differ\n");
     }else{
@@ -540,11 +615,12 @@ int main(int argc, char **argv)
     }
 
     //fprintf(stdout, "populationSize, simulationTime, threads, t_serial, t_parallel, speedup\n");
-    //fprintf(stdout, "%d, %d, %d, %f, %f, %f\n", populationSize, simulationTime, threadNum, elapsedSerial, elapsedParallel, elapsedSerial/elapsedParallel);
+    //fprintf(stdout, "%d, %d, %d, %f, %f, %f\n", populationSize, simulationTime, threadNum, elapsedSerial, elapsedParallelV2, elapsedSerial/elapsedParallelV2);
 
-    fprintf(stdout, "t_serial = %f\nt_parallel = %f\nspeedup = %f\n", elapsedSerial, elapsedParallel, elapsedSerial/elapsedParallel);
+    fprintf(stdout, "t_serial = %f\nt_parallelV1 = %f\nspeedupV1 = %f\n\nt_parallelV2 = %f\nspeedupV2 = %f\n", elapsedSerial, elapsedParallelV1, elapsedSerial/elapsedParallelV1, elapsedParallelV2, elapsedSerial/elapsedParallelV2);
 
     free(personsParallelV2);
+    free(personsParallelV1);
     free(personsSerial);
     return 0;
 }
