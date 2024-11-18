@@ -12,6 +12,10 @@
 #define PATH_EXTENSION_SIZE 4
 #define PADDING_SIZE 60
 
+#define CHUNKSIZE 25600
+#define POLICY dynamic
+
+
 typedef enum{
     INFECTED = 0,
     SUSCEPTIBLE,
@@ -446,13 +450,13 @@ void parallelEpidemicV1(int n, int m, int populationSize, person_t *persons, int
             #pragma omp barrier
         #endif
 
-        #pragma omp for
+        #pragma omp for schedule(POLICY, CHUNKSIZE)
         for(int j = 0; j < populationSize; j++){
             updatePositionsAndContagionZone(persons, j, j+1, n, m, i, contagionZone);
         }
 
 
-        #pragma omp for
+        #pragma omp for schedule(POLICY, CHUNKSIZE)
         for(int j = 0; j < populationSize; j++){
             updateFutureStatus(contagionZone, persons, j, j+1, m);
             updateStatus(persons, j, j+1, omp_get_thread_num());
@@ -573,7 +577,7 @@ int main(int argc, char **argv)
     
     //serial
     clock_gettime(CLOCK_MONOTONIC, &start);
-    serialEpidemic(n, m, populationSize, personsSerial, simulationTime);
+    //serialEpidemic(n, m, populationSize, personsSerial, simulationTime);
     clock_gettime(CLOCK_MONOTONIC, &finish);
 
     elapsedSerial = (finish.tv_sec - start.tv_sec);
@@ -587,37 +591,40 @@ int main(int argc, char **argv)
     elapsedParallelV1 = (finish.tv_sec - start.tv_sec);
     elapsedParallelV1 += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
 
-    
-    //parallel V2
+    /*
+    //parallel V2 
     clock_gettime(CLOCK_MONOTONIC, &start); 
     parallelEpidemicV2(n, m, populationSize, personsParallelV2, simulationTime, threadNum);
     clock_gettime(CLOCK_MONOTONIC, &finish);
 
     elapsedParallelV2 = (finish.tv_sec - start.tv_sec);
     elapsedParallelV2 += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
-
+    */
 
     writeResult(personsSerial, populationSize, path, "_serial_out.txt");
     writeResult(personsParallelV1, populationSize, path, "_omp1_out.txt");
     writeResult(personsParallelV2, populationSize, path, "_omp2_out.txt");
     
+    /*
     if(!personsVectorsAreEqual(personsParallelV1, personsSerial, populationSize)){
         fprintf(stdout, "WARNING: serial and parallel V1 differ\n");
     }else{
         fprintf(stdout, "serial and parallel V1 are the same\n");
     }
-
+    
 
     if(!personsVectorsAreEqual(personsParallelV2, personsSerial, populationSize)){
         fprintf(stdout, "WARNING: serial and parallel V2 differ\n");
     }else{
         fprintf(stdout, "serial and parallel V2 are the same\n");
     }
-
+    */
     //fprintf(stdout, "populationSize, simulationTime, threads, t_serial, t_parallel, speedup\n");
     //fprintf(stdout, "%d, %d, %d, %f, %f, %f\n", populationSize, simulationTime, threadNum, elapsedSerial, elapsedParallelV2, elapsedSerial/elapsedParallelV2);
 
-    fprintf(stdout, "t_serial = %f\nt_parallelV1 = %f\nspeedupV1 = %f\n\nt_parallelV2 = %f\nspeedupV2 = %f\n", elapsedSerial, elapsedParallelV1, elapsedSerial/elapsedParallelV1, elapsedParallelV2, elapsedSerial/elapsedParallelV2);
+    fprintf(stdout, "%s, %d, %d, %d, %f\n", "dynamic", CHUNKSIZE, populationSize, simulationTime, elapsedParallelV1);
+
+    //fprintf(stdout, "t_serial = %f\n\nt_parallelV1 = %f\nspeedupV1 = %f\n\nt_parallelV2 = %f\nspeedupV2 = %f\n", elapsedSerial, elapsedParallelV1, elapsedSerial/elapsedParallelV1, elapsedParallelV2, elapsedSerial/elapsedParallelV2);
 
     free(personsParallelV2);
     free(personsParallelV1);
