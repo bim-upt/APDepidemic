@@ -1,6 +1,6 @@
 rounds=(50 100 150 200 500)
 inputFile=("epidemics10K.txt" "epidemics20K.txt" "epidemics50K.txt" "epidemics100K.txt" "epidemics500K.txt")
-threadNum=(2 3 4 5 6 7 8 9 10)
+threadNum=(2 4 6 8 10)
 
 > results.txt
 for round in "${rounds[@]}"; do

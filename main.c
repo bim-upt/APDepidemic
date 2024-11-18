@@ -2,10 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <omp.h>
 
 
 //#define DEBUG
-#define IMMUNE_DURATION 0
+#define IMMUNE_DURATION 2
 #define INFECTED_DURATION 7
 #define MAX_PATH 256
 #define PATH_EXTENSION_SIZE 4
@@ -353,7 +354,7 @@ epidemic_DTO dataToEpidemicDTO(int n, int m, int populationSize, person_t *perso
 
 
 
-void parallelEpidemic(int n, int m, int populationSize, person_t *persons, int rounds, int threadNum){
+void parallelEpidemicV2(int n, int m, int populationSize, person_t *persons, int rounds, int threadNum){
     pthread_t *threads = malloc(sizeof(pthread_t)*threadNum);
     epidemic_DTO *payloads = malloc(sizeof(epidemic_DTO)*threadNum);
     paddedInt_t *contagionZone = malloc(sizeof(paddedInt_t)*n*m);
@@ -437,28 +438,22 @@ void writePersonsToFile(person_t *persons, FILE *f, int populationSize){
     }
 }
 
-void writeResults(person_t *personsSerial, person_t *personsParallel, int populationSize, char *path){
-    char serialPath[MAX_PATH], parallelPath[MAX_PATH];
-    strcpy(serialPath, path);
-    serialPath[strlen(serialPath) - PATH_EXTENSION_SIZE] = 0;
-    strcat(serialPath,"_serial_out.txt");
+void writeResult(person_t *persons, int populationSize, char *path, char *extension){
+    char newPath[MAX_PATH];
+    strcpy(newPath, path);
+    newPath[strlen(newPath) - PATH_EXTENSION_SIZE] = 0;
+    strcat(newPath,extension);
 
-    strcpy(parallelPath, path);
-    parallelPath[strlen(parallelPath) - PATH_EXTENSION_SIZE] = 0;
-    strcat(parallelPath,"_parallel_out.txt");
-
-    FILE *serialF = fopen(serialPath, "w");
-    FILE *parallelF = fopen(parallelPath, "w");
-    if(serialF == NULL || parallelF == NULL){
-        perror("Could not create output files");
+ 
+    FILE *f = fopen(newPath, "w");
+    if(f == NULL){
+        perror("Could not create output file");
         exit(-1);
     }
 
-    writePersonsToFile(personsSerial, serialF, populationSize);
-    writePersonsToFile(personsParallel, parallelF, populationSize);
+    writePersonsToFile(persons, f, populationSize);
 
-    fclose(serialF);
-    fclose(parallelF);
+    fclose(f);
 }
 
 person_t *copyPersonsVector(person_t *persons, int populationSize){
@@ -477,14 +472,13 @@ int samePerson(person_t a, person_t b){
     return a.coords.x == b.coords.x && a.coords.y == b.coords.y && a.status.status == b.status.status && a.status.infectionCounter == b.status.infectionCounter && a.id == b.id;
 }
 
-void checkPersonsVectorEquality(person_t *v1, person_t *v2, int populationSize){
+int personsVectorsAreEqual(person_t *v1, person_t *v2, int populationSize){
     for(int i = 0; i < populationSize; i++){
         if(!samePerson(v1[i], v2[i])){
-            fprintf(stdout, "WARNING: parallel and serial results differ\n");
-            return;
+            return 0;
         }
     }
-    fprintf(stdout, "Parallel and serial results are the same\n");
+    return 1;
 }
 
 
@@ -516,7 +510,7 @@ int main(int argc, char **argv)
 
     initializeSimulationParameters(f, &n, &m, &populationSize);
     person_t *personsSerial = getPopulation(f, populationSize);
-    person_t *personsParallel = copyPersonsVector(personsSerial, populationSize);
+    person_t *personsParallelV2 = copyPersonsVector(personsSerial, populationSize);
     fclose(f);
         
     
@@ -530,22 +524,27 @@ int main(int argc, char **argv)
 
     //parallel
     clock_gettime(CLOCK_MONOTONIC, &start); 
-    parallelEpidemic(n, m, populationSize, personsParallel, simulationTime, threadNum);
+    parallelEpidemicV2(n, m, populationSize, personsParallelV2, simulationTime, threadNum);
     clock_gettime(CLOCK_MONOTONIC, &finish);
 
     elapsedParallel = (finish.tv_sec - start.tv_sec);
     elapsedParallel += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
 
 
-    writeResults(personsSerial, personsParallel, populationSize, path);
-    checkPersonsVectorEquality(personsParallel, personsSerial, populationSize);
+    writeResult(personsSerial, populationSize, path, "_serial_out.txt");
+    writeResult(personsSerial, populationSize, path, "_omp2_out.txt");
+    if(!personsVectorsAreEqual(personsParallelV2, personsSerial, populationSize)){
+        fprintf(stdout, "WARNING: serial and parallel V2 differ\n");
+    }else{
+        fprintf(stdout, "serial and parallel V2 are the same\n");
+    }
 
     //fprintf(stdout, "populationSize, simulationTime, threads, t_serial, t_parallel, speedup\n");
     //fprintf(stdout, "%d, %d, %d, %f, %f, %f\n", populationSize, simulationTime, threadNum, elapsedSerial, elapsedParallel, elapsedSerial/elapsedParallel);
 
     fprintf(stdout, "t_serial = %f\nt_parallel = %f\nspeedup = %f\n", elapsedSerial, elapsedParallel, elapsedSerial/elapsedParallel);
 
-    free(personsParallel);
+    free(personsParallelV2);
     free(personsSerial);
     return 0;
 }
