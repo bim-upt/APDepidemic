@@ -3,7 +3,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <omp.h>
-
+#include <mpi.h>
 
 //#define DEBUG
 #define IMMUNE_DURATION 2
@@ -14,7 +14,7 @@
 
 #define CHUNKSIZE 800
 #define POLICY dynamic
-
+#define MASTER 0
 
 typedef enum{
     INFECTED = 0,
@@ -50,10 +50,7 @@ typedef struct{
     int movementAmplitute;
 }person_t;
 
-typedef struct{
-    int data;
-    char padding[PADDING_SIZE];
-}paddedInt_t;
+
 
 
 
@@ -157,16 +154,16 @@ coords_t nextCoords(coords_t coords, int n, int m, cardinalDirections_e dir, int
 
 }
 
-void makeContagionZone(paddedInt_t *contagionZone, coords_t coords, int m){
-    contagionZone[coords.y*m+coords.x].data = 1;
+void makeContagionZone(int *contagionZone, coords_t coords, int m){
+    contagionZone[coords.y*m+coords.x] = 1;
 }
 
 
-void updatePositionsAndContagionZone(person_t *persons, int start, int end, int n, int m, int round, paddedInt_t *contagionZone){
+void updatePositionsAndContagionZone(person_t *persons, int start, int end, int n, int m, int round, int *contagionZone){
 
     for(int i = start; i < end; i++){
         persons[i].coords = nextCoords(persons[i].coords, n, m, persons[i].dir, persons[i].movementAmplitute, &persons[i].dir);
-        if(persons[i].status.status == INFECTED && !contagionZone[persons[i].coords.y*m + persons[i].coords.x].data){
+        if(persons[i].status.status == INFECTED && !contagionZone[persons[i].coords.y*m + persons[i].coords.x]){
             makeContagionZone(contagionZone, persons[i].coords, m);
         }
     }
@@ -176,14 +173,14 @@ void updatePositionsAndContagionZone(person_t *persons, int start, int end, int 
 
 
 
-int coordIsContagious(paddedInt_t *contagionZone, coords_t coords, int m){
-    return contagionZone[coords.y*m + coords.x].data;
+int coordIsContagious(int *contagionZone, coords_t coords, int m){
+    return contagionZone[coords.y*m + coords.x];
 }
 
 
 
 
-void updateFutureStatus(paddedInt_t *contagionZone, person_t *persons, int start, int end, int m){
+void updateFutureStatus(int *contagionZone, person_t *persons, int start, int end, int m){
     for(int i = start; i < end; i++){
         persons[i].futureStatus = persons[i].status;
         if(persons[i].status.status == SUSCEPTIBLE) {
@@ -211,7 +208,7 @@ void updateFutureStatus(paddedInt_t *contagionZone, person_t *persons, int start
     }
 }
 
-void updateStatus(person_t *persons, int start, int end, int rank){
+void updateStatus(person_t *persons, int start, int end, int rank, int round){
     
     for(int i = start; i < end; i++){
         #ifdef DEBUG
@@ -232,20 +229,21 @@ void updateStatus(person_t *persons, int start, int end, int rank){
             }else{
                 nxtStatus = "INFECTED";
             }
-            fprintf(stdout, "thread %d - id: %d | (%d,%d) | %s -> %s | imn time: %d | inf time: %d | inf count: %d\n", rank, persons[i].id, persons[i].coords.x, persons[i].coords.y, status, nxtStatus, persons[i].status.immuneTime, persons[i].status.infectionTime, persons[i].status.infectionCounter);
+            fprintf(stdout, "round %d - rank %d - id: %d | (%d,%d) | %s -> %s | imn time: %d | inf time: %d | inf count: %d\n", round, rank, persons[i].id, persons[i].coords.x, persons[i].coords.y, status, nxtStatus, persons[i].status.immuneTime, persons[i].status.infectionTime, persons[i].status.infectionCounter);
+            fflush(stdout);
         #endif
         persons[i].status = persons[i].futureStatus;
     }
 }
 
-void resetContagionZone(paddedInt_t *contagionZone, int start, int nmem){
-    memset(contagionZone + start, 0, nmem*sizeof(paddedInt_t));
+void resetContagionZone(int *contagionZone, int start, int nmem){
+    memset(contagionZone + start, 0, nmem*sizeof(int));
 }
 
-void printVector(paddedInt_t *v, int n, int m){
+void printVector(int *v, int n, int m){
     for(int i = 0; i < n; i++){
         for(int j = 0; j < m; j++){
-            fprintf(stdout, "%d ", v[i*m+j].data);
+            fprintf(stdout, "%d ", v[i*m+j]);
         }
         fprintf(stdout, "\n");
     }
@@ -256,12 +254,13 @@ void printVector(paddedInt_t *v, int n, int m){
 void serialEpidemic(int n, int m, int populationSize, person_t *persons, int rounds){
 
     //1 = someone infected is there, 0 = nope
-    paddedInt_t *contagionZone = malloc(sizeof(paddedInt_t)*n*m);
+    int *contagionZone = malloc(sizeof(int)*n*m);
     if(contagionZone == NULL){
         perror("Could not initiate contagious zones");
         exit(-1);
     }
-    memset(contagionZone, 0, sizeof(paddedInt_t)*n*m);
+    
+    memset(contagionZone, 0, sizeof(int)*n*m);
 
     for(int i = 0; i < rounds; i++){
         #ifdef DEBUG
@@ -269,7 +268,7 @@ void serialEpidemic(int n, int m, int populationSize, person_t *persons, int rou
         #endif
         updatePositionsAndContagionZone(persons, 0, populationSize, n, m, i, contagionZone);
         updateFutureStatus(contagionZone, persons, 0, populationSize, m);
-        updateStatus(persons, 0, populationSize, 0);
+        updateStatus(persons, 0, populationSize, 0, i);
         #ifdef DEBUG
             printVector(contagionZone,n,m);
         #endif
@@ -277,6 +276,9 @@ void serialEpidemic(int n, int m, int populationSize, person_t *persons, int rou
     }
     free(contagionZone);
 }
+
+
+
 
 
 
@@ -345,11 +347,89 @@ int personsVectorsAreEqual(person_t *v1, person_t *v2, int populationSize){
     return 1;
 }
 
+void MPIEpidemic(int n, int m, int populationSize, person_t *persons, int rounds, int numtasks, int rank){
+
+    //1 = someone infected is there, 0 = nope
+    int *contagionZone = malloc(sizeof(int)*n*m);
+    if(contagionZone == NULL){
+        perror("Could not initiate contagious zones");
+        exit(-1);
+    }
+    
+    memset(contagionZone, 0, sizeof(int)*n*m);
+    
+    
+
+    for(int i = 0; i < rounds; i++){
+        #ifdef DEBUG
+            if(rank == MASTER)
+                fprintf(stdout, "\nt = %d\n", i);
+        #endif
+
+        updatePositionsAndContagionZone(persons, 0, populationSize, n, m, i, contagionZone);
+        
+
+
+        MPI_Allreduce(MPI_IN_PLACE, contagionZone, n*m, MPI_INT, MPI_MAX,  MPI_COMM_WORLD);
+    
+
+
+        updateFutureStatus(contagionZone, persons, 0, populationSize, m);
+        updateStatus(persons, 0, populationSize, rank, i);
+        #ifdef DEBUG
+            if(rank == MASTER){
+                printf("contagion for round %d \n", i);
+                printVector(contagionZone,n,m);
+                
+            }
+        #endif
+        resetContagionZone(contagionZone, 0, m*n);
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+    free(contagionZone);
+}
+
+
+void distributeInitialData(person_t *persons, person_t **personsLocal, int *populationSize, int *n, int *m, int numtasks, int rank, int trueSize, int *workloads, int *offsets){
+    MPI_Bcast(&trueSize, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
+    MPI_Bcast(n, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
+    MPI_Bcast(m, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
+
+    int workload = (rank < trueSize%numtasks) ? trueSize/numtasks+1 : trueSize/numtasks;
+    person_t *personsMPILocal = malloc(sizeof(person_t) * workload);
+    if(personsMPILocal == NULL){
+        exit(-1);
+    } 
+    if(rank == MASTER){
+        for(int i = 0; i < numtasks; i++){
+            
+            workloads[i] = ((i < trueSize%numtasks) ? trueSize/numtasks+1 : trueSize/numtasks) * sizeof(person_t);
+            offsets[i] = ((i == 0) ? 0 : offsets[i-1] + workloads[i]);
+
+        }
+        MPI_Scatterv(persons, workloads, offsets, MPI_BYTE, personsMPILocal, workload*sizeof(person_t), MPI_BYTE, MASTER, MPI_COMM_WORLD);
+    }else{
+        MPI_Scatterv(NULL, NULL, NULL, MPI_BYTE, personsMPILocal, workload*sizeof(person_t), MPI_BYTE, MASTER, MPI_COMM_WORLD);
+    }
+    
+    (*populationSize) = workload;
+    (*personsLocal) = personsMPILocal;
+
+}
+
 
 //https://github.com/bim-upt/APDepidemic
 int main(int argc, char **argv)
 {
-    int n, m, populationSize;
+
+
+    int numtasks, rank;
+    MPI_Init(&argc, &argv);
+    MPI_Comm_size(MPI_COMM_WORLD, &numtasks);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+
+    int n, m, populationSize, trueSize;
     struct timespec start, finish;
     double elapsedSerial, elapsedMPI;
 
@@ -364,33 +444,71 @@ int main(int argc, char **argv)
 
     //initialization
     char *path = argv[2];
-    FILE *f = fopen(path, "r");
-    if(f == NULL){
-        perror("Could not open initialization file");
-        exit(-1);
+    person_t *personsSerial, *personsMPI, *personsMPILocal;
+    if(rank == MASTER){
+        FILE *f = fopen(path, "r");
+        if(f == NULL){
+            perror("Could not open initialization file");
+            exit(-1);
+        }
+        initializeSimulationParameters(f, &n, &m, &trueSize);
+        personsSerial = getPopulation(f, trueSize);
+        fclose(f);
+        personsMPI = malloc(sizeof(person_t) * trueSize);
+        if(personsMPI == NULL){
+            perror("Couldn't initialize final vector");
+            exit(1);
+        }
+    }
+    int *workloads, *offsets;
+    if(rank == MASTER){
+        workloads = malloc(sizeof(int)*numtasks);
+        offsets = malloc(sizeof(int)*numtasks);
+        if(workloads == NULL || offsets == NULL){
+            perror("Couldn't initialize needed vectors");
+            exit(1);
+        }
     }
 
-    initializeSimulationParameters(f, &n, &m, &populationSize);
-    person_t *personsSerial = getPopulation(f, populationSize);
-    fclose(f);
-    person_t *personsMPI = copyPersonsVector(personsSerial, populationSize);
-
-        
+    distributeInitialData(personsSerial, &personsMPILocal, &populationSize, &n, &m, numtasks, rank, trueSize, workloads, offsets);
+   
     
     //serial
-    clock_gettime(CLOCK_MONOTONIC, &start);
-    serialEpidemic(n, m, populationSize, personsSerial, simulationTime);
-    clock_gettime(CLOCK_MONOTONIC, &finish);
-
-    elapsedSerial = (finish.tv_sec - start.tv_sec);
-    elapsedSerial += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    if(rank == MASTER){
+        clock_gettime(CLOCK_MONOTONIC, &start);
+        serialEpidemic(n, m, trueSize, personsSerial, simulationTime);
+        clock_gettime(CLOCK_MONOTONIC, &finish);
+        elapsedSerial = (finish.tv_sec - start.tv_sec);
+        elapsedSerial += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+        writeResult(personsSerial, populationSize, path, "_serial_out.txt");
+    }
 
    
+    //mpi
+    if(rank == MASTER){
+        clock_gettime(CLOCK_MONOTONIC, &start);
+    }
+    MPIEpidemic(n, m , populationSize, personsMPILocal, simulationTime, numtasks, rank);
+    if(rank == MASTER){
+        clock_gettime(CLOCK_MONOTONIC, &finish);
+        elapsedMPI = (finish.tv_sec - start.tv_sec);
+        elapsedMPI += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    }
 
- 
+    MPI_Gatherv(personsMPILocal, populationSize*sizeof(person_t), MPI_BYTE, personsMPI, workloads, offsets, MPI_BYTE, MASTER, MPI_COMM_WORLD);
+   
+    if(rank == MASTER){
+        if(!personsVectorsAreEqual(personsMPI, personsSerial, trueSize)){
+            fprintf(stdout, "WARNING: serial and MPI differ\n");
+        }else{
+            fprintf(stdout, "serial and parallel MPI are the same\n");
+        }
+        writeResult(personsSerial, populationSize, path, "_serial_out.txt");
+        writeResult(personsMPI, populationSize, path, "_mpi_out.txt");
+    }
     
 
-    writeResult(personsSerial, populationSize, path, "_serial_out.txt");
+ 
     
   
     
@@ -399,9 +517,17 @@ int main(int argc, char **argv)
 
     //fprintf(stdout, "%s, %d, %d, %d, %f\n", "dynamic", CHUNKSIZE, populationSize, simulationTime, elapsedParallelV1);
 
-    //fprintf(stdout, "t_serial = %f\n\nt_parallelV1 = %f\nspeedupV1 = %f\n\nt_parallelV2 = %f\nspeedupV2 = %f\n", elapsedSerial, elapsedParallelV1, elapsedSerial/elapsedParallelV1, elapsedParallelV2, elapsedSerial/elapsedParallelV2);
-
-    free(personsMPI);
-    free(personsSerial);
+    if(rank == MASTER){
+        fprintf(stdout, "t_serial = %f\nt_MPI = %f\nspeedup = %f\n", elapsedSerial, elapsedMPI, elapsedSerial/elapsedMPI);
+    }
+    
+    free(personsMPILocal);
+    if(rank == MASTER){
+        free(personsSerial);
+        free(personsMPI);
+        free(workloads);
+        free(offsets);
+    }
+    MPI_Finalize();
     return 0;
 }

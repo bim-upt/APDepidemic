@@ -5,7 +5,7 @@
 #include <omp.h>
 
 
-//#define DEBUG
+#define DEBUG
 #define IMMUNE_DURATION 2
 #define INFECTED_DURATION 7
 #define MAX_PATH 256
