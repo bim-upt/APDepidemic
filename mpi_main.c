@@ -481,7 +481,6 @@ int main(int argc, char **argv)
         clock_gettime(CLOCK_MONOTONIC, &finish);
         elapsedSerial = (finish.tv_sec - start.tv_sec);
         elapsedSerial += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
-        writeResult(personsSerial, populationSize, path, "_serial_out.txt");
     }
 
    
@@ -499,6 +498,7 @@ int main(int argc, char **argv)
     MPI_Gatherv(personsMPILocal, populationSize*sizeof(person_t), MPI_BYTE, personsMPI, workloads, offsets, MPI_BYTE, MASTER, MPI_COMM_WORLD);
 
     //finalize
+    
     if(rank == MASTER){
         if(!personsVectorsAreEqual(personsMPI, personsSerial, trueSize)){
             fprintf(stdout, "WARNING: serial and MPI differ\n");
