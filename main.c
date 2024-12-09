@@ -12,7 +12,7 @@
 #define PATH_EXTENSION_SIZE 4
 #define PADDING_SIZE 60
 
-#define CHUNKSIZE 25600
+#define CHUNKSIZE 800
 #define POLICY dynamic
 
 
@@ -577,7 +577,7 @@ int main(int argc, char **argv)
     
     //serial
     clock_gettime(CLOCK_MONOTONIC, &start);
-    //serialEpidemic(n, m, populationSize, personsSerial, simulationTime);
+    serialEpidemic(n, m, populationSize, personsSerial, simulationTime);
     clock_gettime(CLOCK_MONOTONIC, &finish);
 
     elapsedSerial = (finish.tv_sec - start.tv_sec);
@@ -591,7 +591,7 @@ int main(int argc, char **argv)
     elapsedParallelV1 = (finish.tv_sec - start.tv_sec);
     elapsedParallelV1 += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
 
-    /*
+    
     //parallel V2 
     clock_gettime(CLOCK_MONOTONIC, &start); 
     parallelEpidemicV2(n, m, populationSize, personsParallelV2, simulationTime, threadNum);
@@ -599,13 +599,13 @@ int main(int argc, char **argv)
 
     elapsedParallelV2 = (finish.tv_sec - start.tv_sec);
     elapsedParallelV2 += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
-    */
+    
 
     writeResult(personsSerial, populationSize, path, "_serial_out.txt");
     writeResult(personsParallelV1, populationSize, path, "_omp1_out.txt");
     writeResult(personsParallelV2, populationSize, path, "_omp2_out.txt");
     
-    /*
+    
     if(!personsVectorsAreEqual(personsParallelV1, personsSerial, populationSize)){
         fprintf(stdout, "WARNING: serial and parallel V1 differ\n");
     }else{
@@ -618,13 +618,13 @@ int main(int argc, char **argv)
     }else{
         fprintf(stdout, "serial and parallel V2 are the same\n");
     }
-    */
+    
     //fprintf(stdout, "populationSize, simulationTime, threads, t_serial, t_parallel, speedup\n");
     //fprintf(stdout, "%d, %d, %d, %f, %f, %f\n", populationSize, simulationTime, threadNum, elapsedSerial, elapsedParallelV2, elapsedSerial/elapsedParallelV2);
 
-    fprintf(stdout, "%s, %d, %d, %d, %f\n", "dynamic", CHUNKSIZE, populationSize, simulationTime, elapsedParallelV1);
+    //fprintf(stdout, "%s, %d, %d, %d, %f\n", "dynamic", CHUNKSIZE, populationSize, simulationTime, elapsedParallelV1);
 
-    //fprintf(stdout, "t_serial = %f\n\nt_parallelV1 = %f\nspeedupV1 = %f\n\nt_parallelV2 = %f\nspeedupV2 = %f\n", elapsedSerial, elapsedParallelV1, elapsedSerial/elapsedParallelV1, elapsedParallelV2, elapsedSerial/elapsedParallelV2);
+    fprintf(stdout, "t_serial = %f\n\nt_parallelV1 = %f\nspeedupV1 = %f\n\nt_parallelV2 = %f\nspeedupV2 = %f\n", elapsedSerial, elapsedParallelV1, elapsedSerial/elapsedParallelV1, elapsedParallelV2, elapsedSerial/elapsedParallelV2);
 
     free(personsParallelV2);
     free(personsParallelV1);
