@@ -401,11 +401,12 @@ void distributeInitialData(person_t *persons, person_t **personsLocal, int *popu
         exit(-1);
     } 
     if(rank == MASTER){
+        int avr = trueSize/numtasks;
+        int extra = trueSize%numtasks;
         for(int i = 0; i < numtasks; i++){
             
-            workloads[i] = ((i < trueSize%numtasks) ? trueSize/numtasks+1 : trueSize/numtasks) * sizeof(person_t);
-            offsets[i] = ((i == 0) ? 0 : offsets[i-1] + workloads[i]);
-
+            workloads[i] =  ((i < extra) ? avr+1 : avr)*sizeof(person_t);
+            offsets[i] = ((i == 0) ? 0 : offsets[i-1] + workloads[i-1]);
         }
         MPI_Scatterv(persons, workloads, offsets, MPI_BYTE, personsMPILocal, workload*sizeof(person_t), MPI_BYTE, MASTER, MPI_COMM_WORLD);
     }else{
@@ -496,26 +497,21 @@ int main(int argc, char **argv)
     }
 
     MPI_Gatherv(personsMPILocal, populationSize*sizeof(person_t), MPI_BYTE, personsMPI, workloads, offsets, MPI_BYTE, MASTER, MPI_COMM_WORLD);
-   
+
+    //finalize
     if(rank == MASTER){
         if(!personsVectorsAreEqual(personsMPI, personsSerial, trueSize)){
             fprintf(stdout, "WARNING: serial and MPI differ\n");
         }else{
             fprintf(stdout, "serial and parallel MPI are the same\n");
         }
-        writeResult(personsSerial, populationSize, path, "_serial_out.txt");
-        writeResult(personsMPI, populationSize, path, "_mpi_out.txt");
+        writeResult(personsSerial, trueSize, path, "_serial_out.txt");
+        writeResult(personsMPI, trueSize, path, "_mpi_out.txt");
     }
     
 
  
     
-  
-    
-    //fprintf(stdout, "populationSize, simulationTime, threads, t_serial, t_parallel, speedup\n");
-    //fprintf(stdout, "%d, %d, %d, %f, %f, %f\n", populationSize, simulationTime, threadNum, elapsedSerial, elapsedParallelV2, elapsedSerial/elapsedParallelV2);
-
-    //fprintf(stdout, "%s, %d, %d, %d, %f\n", "dynamic", CHUNKSIZE, populationSize, simulationTime, elapsedParallelV1);
 
     if(rank == MASTER){
         fprintf(stdout, "t_serial = %f\nt_MPI = %f\nspeedup = %f\n", elapsedSerial, elapsedMPI, elapsedSerial/elapsedMPI);
