@@ -489,13 +489,14 @@ int main(int argc, char **argv)
         clock_gettime(CLOCK_MONOTONIC, &start);
     }
     MPIEpidemic(n, m , populationSize, personsMPILocal, simulationTime, numtasks, rank);
+    MPI_Gatherv(personsMPILocal, populationSize*sizeof(person_t), MPI_BYTE, personsMPI, workloads, offsets, MPI_BYTE, MASTER, MPI_COMM_WORLD);
     if(rank == MASTER){
         clock_gettime(CLOCK_MONOTONIC, &finish);
         elapsedMPI = (finish.tv_sec - start.tv_sec);
         elapsedMPI += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
     }
 
-    MPI_Gatherv(personsMPILocal, populationSize*sizeof(person_t), MPI_BYTE, personsMPI, workloads, offsets, MPI_BYTE, MASTER, MPI_COMM_WORLD);
+    
 
     //finalize
     
