@@ -384,7 +384,7 @@ void MPIEpidemic(int n, int m, int populationSize, person_t *persons, int rounds
             }
         #endif
         resetContagionZone(contagionZone, 0, m*n);
-        MPI_Barrier(MPI_COMM_WORLD);
+        //MPI_Barrier(MPI_COMM_WORLD);
     }
     free(contagionZone);
 }
